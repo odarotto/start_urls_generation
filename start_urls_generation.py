@@ -6,6 +6,7 @@ import json
 from dotenv import load_dotenv, find_dotenv
 
 from MySQLdb.cursors import DictCursor
+from dotenv import main
 
 
 load_dotenv(find_dotenv())
@@ -69,17 +70,15 @@ def load_publishers(publishers_path):
     """load_publishers : Reads all of the CSV files in PUBLISHERS_PATH and generates a 
     list() object with several dict() objects in the following structure:
 
-    [
-        {
-            "spider_name": [
-                {
-                    "company_slug": "slug",
-                    "company_name": "name",
-                    "start_url": "URL"
-                }
-            ]
-        },
-    ]
+    {
+        "spider_name": [
+            {
+                "company_slug": "slug",
+                "company_name": "name",
+                "start_url": "URL"
+            }
+        ]
+    }
 
     Args:
         publishers_path (str): Path to the folder that contains the CSV files.
@@ -93,17 +92,19 @@ def load_publishers(publishers_path):
     for file_name in os.listdir(publishers_path):
         if file_name.endswith('.csv'):
             # Load the content of the CSV file
-            with open(publishers_path+'/'+file_name, 'r') as file:
-                spiders_publishers = list()
-                for line in file:
-                    fields = line.strip().split('\t')
-                    line_dict = {
-                        'company_slug': fields[0],
-                        'company_name': fields[1],
-                        'start_url': fields[-1]
-                    }
-                    spiders_publishers.append(line_dict)
-                publishers[file_name.strip('.csv')] = spiders_publishers
+            file_path = publishers_path + '/' + file_name
+            if os.stat(file_path).st_size != 0:
+                with open(file_path, 'r') as file:
+                    spiders_publishers = list()
+                    for line in file:
+                        fields = line.strip().split('\t')
+                        line_dict = {
+                            'company_slug': fields[0],
+                            'company_name': fields[1],
+                            'start_url': fields[-1]
+                        }
+                        spiders_publishers.append(line_dict)
+                    publishers[file_name.strip('.csv')] = spiders_publishers
     return publishers
 
 
@@ -116,10 +117,14 @@ def extract_domain_from_url(url):
     Returns:
         str: domain part of the input URL.
     """
+    domain = ''
     try:
-        return re.findall(r'https?://(.*?)/', url)[0]
+        domain = re.findall(r'https?://(.*?)/', url)[0]
+        return domain
     except IndexError as e:
-        logging.info('[!] Error {}:\n'.format(e))
+        if domain == '':
+            domain =  re.sub(r'https?://', '', url)
+    return domain
 
 
 def find_spider_by_name(name, spiders):
@@ -134,7 +139,7 @@ def find_spider_by_name(name, spiders):
         dict: the dict object representing the data of the spider found.
     """
     for spider in spiders:
-        if spider['name'] in name:
+        if name in spider['main_domain']:
             return spider
 
 
@@ -167,7 +172,13 @@ def generate_start_urls(publishers, spiders):
             if spider['start_link_regexp'] is not None:
                 if re.match(spider['start_link_regexp'], publisher_dict['start_url']):
                     param = publisher_dict['start_url']
-                    spider_start_urls.append(param)
+                    if param is None:
+                        print()
+                    spider_start_urls.append({
+                        'company_slug': publisher_dict['company_slug'],
+                        'company_name': publisher_dict['company_name'],
+                        'start_url': param
+                    })
                     continue
             param = extract_domain_from_url(publisher_dict['start_url'])
             spider_start_urls.append({
@@ -180,19 +191,36 @@ def generate_start_urls(publishers, spiders):
     return start_urls
 
 
+def insert_new_urls_to_repo(start_urls, comparing_publishers):
+    for spider_name, publishers_list in comparing_publishers.items():
+        if spider_name in start_urls.keys():
+            for in_publisher in start_urls[spider_name]:
+                to_add = True
+                for out_publisher in publishers_list:
+                    if in_publisher == out_publisher:
+                        to_add = False
+                        break
+                if to_add:
+                    print(
+                        '[!] Publisher: {}\n can be added to {} spider.'
+                            .format(in_publisher, spider_name)
+                    )
+        continue
+
+
 if __name__ == "__main__":
     # Load input data
     spiders = load_spiders_from_db(SQL_QUERY, DB_HOST, DB_USER, DB_PASS, DB_NAME)
     publishers = load_publishers(PUBLISHERS_PATH)
+    comparing_publishers = load_publishers(PUBLISHERS_COMPARING_PATH)
 
     # Generate start_urls from input data
     start_urls = generate_start_urls(publishers, spiders)
 
     # Compare generated start_urls with urls already in the repo
+    insert_new_urls_to_repo(start_urls, comparing_publishers)
 
-    print(json.dumps(start_urls, indent=2))
-
-    # print(json.dumps(publishers, indent=2))
-    print('Spiders len: {}'.format(len(spiders)))
-    print('Publishers len: {}'.format(len(publishers)))
-    print('Start URLs generated: {}'.format(len(start_urls)))
+    # print(json.dumps(start_urls, indent=2))
+    # print('Spiders len: {}'.format(len(spiders)))
+    # print('Publishers len: {}'.format(len(publishers)))
+    # print('Start URLs generated: {}'.format(len(start_urls)))
