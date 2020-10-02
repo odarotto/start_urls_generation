@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import json
+import urllib.parse
 from dotenv import load_dotenv, find_dotenv
 
 from MySQLdb.cursors import DictCursor
@@ -117,14 +118,7 @@ def extract_domain_from_url(url):
     Returns:
         str: domain part of the input URL.
     """
-    domain = ''
-    try:
-        domain = re.findall(r'https?://(.*?)/', url)[0]
-        return domain
-    except IndexError as e:
-        if domain == '':
-            domain =  re.sub(r'https?://', '', url)
-    return domain
+    return urllib.parse.urlparse(url).netloc
 
 
 def find_spider_by_name(name, spiders):
@@ -219,8 +213,3 @@ if __name__ == "__main__":
 
     # Compare generated start_urls with urls already in the repo
     insert_new_urls_to_repo(start_urls, comparing_publishers)
-
-    # print(json.dumps(start_urls, indent=2))
-    # print('Spiders len: {}'.format(len(spiders)))
-    # print('Publishers len: {}'.format(len(publishers)))
-    # print('Start URLs generated: {}'.format(len(start_urls)))
