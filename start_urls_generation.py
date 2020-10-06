@@ -1,13 +1,20 @@
+from operator import index
+
+from selenium.common.exceptions import JavascriptException
+from checking_url_tool import check_urls_integrity
+from os import sep
 import MySQLdb
 import logging
 import os
 import re
+import time
 import json
+import random
 import urllib.parse
 from dotenv import load_dotenv, find_dotenv
-
 from MySQLdb.cursors import DictCursor
-from dotenv import main
+from pandas import DataFrame
+from scraping_common import *
 
 
 load_dotenv(find_dotenv())
@@ -19,7 +26,7 @@ PUBLISHERS_PATH = os.getenv('PUBLISHERS_INPUT_PATH')
 PUBLISHERS_COMPARING_PATH = os.getenv('PUBLISHERS_COMPARING_PATH')
 GOOGLE_INCLUDE_TPL = ' site:*.{}'
 GOOGLE_IGNORE1_TPL = ' -site:{}.{}'
-SQL_QUERY = """
+SQL_QUERY_FOR_SPIDERS = """
     SELECT 
         `id`, 
         `name`, 
@@ -33,6 +40,20 @@ SQL_QUERY = """
     WHERE  
         `is_ats_site`=1 AND `is_excluded`=0;
 """
+SQL_QUERY_FOR_QUERY_GENERATION = """
+    SELECT 
+        `id`, 
+        `name`, 
+        `main_domain`, 
+        `ignored_subdomains`, 
+        `google_query` 
+    FROM 
+        `spiders_on_recruitnet` 
+    WHERE  
+        `is_ats_site`=1 AND `is_excluded`=0{};
+"""
+CHROMEDRIVER_EXE_PATH = os.getenv('CHROMEDRIVER_EXE_PATH')
+CHROMEDRIVER_COOKIES_PATH = os.getenv('CHROMEDRIVER_COOKIES_PATH')
 
 
 def load_spiders_from_db(query, db_host='127.0.0.1', db_user='root', db_pass='pass', db_name='db'):
@@ -98,12 +119,16 @@ def load_publishers(publishers_path):
                 with open(file_path, 'r') as file:
                     spiders_publishers = list()
                     for line in file:
-                        fields = line.strip().split('\t')
+                        fields = line.strip().split('\t') if '\t' in line else line.strip().split()
                         line_dict = {
-                            'company_slug': fields[0],
-                            'company_name': fields[1],
+                            'company_slug': '',
+                            'company_name': fields[0],
                             'start_url': fields[-1]
-                        }
+                        } if len(fields) == 2 else {
+                                'company_slug': fields[0],
+                                'company_name': fields[1],
+                                'start_url': fields[-1]
+                            }
                         spiders_publishers.append(line_dict)
                     publishers[file_name.strip('.csv')] = spiders_publishers
     return publishers
@@ -175,40 +200,186 @@ def generate_start_urls(publishers, spiders):
                     })
                     continue
             param = extract_domain_from_url(publisher_dict['start_url'])
-            spider_start_urls.append({
-                'company_slug': publisher_dict['company_slug'],
-                'company_name': publisher_dict['company_name'],
-                'start_url': spider['start_link_template'].format(param)
-            })
+            try:
+                spider_start_urls.append({
+                    'company_slug': publisher_dict['company_slug'],
+                    'company_name': publisher_dict['company_name'],
+                    'start_url': spider['start_link_template'].format(param)
+                })
+            except IndexError:
+                spider_start_urls.append({
+                    'company_slug': publisher_dict['company_slug'],
+                    'company_name': publisher_dict['company_name'],
+                    'start_url': publisher_dict['start_url']
+                })
                 
         start_urls[spider_name] = spider_start_urls
     return start_urls
 
 
 def insert_new_urls_to_repo(start_urls, comparing_publishers):
+    """insert_new_urls_to_repo : This function compares each new publisher's URL found in the input
+    data against the comparing data.
+
+    Args:
+        start_urls (dict): input data
+        comparing_publishers (dict): comparing data
+    """
     for spider_name, publishers_list in comparing_publishers.items():
+        spider_new_urls = list()
         if spider_name in start_urls.keys():
             for in_publisher in start_urls[spider_name]:
                 to_add = True
                 for out_publisher in publishers_list:
-                    if in_publisher == out_publisher:
+                    if in_publisher['start_url'] == out_publisher['start_url'] or \
+                        in_publisher['start_url'] in out_publisher['start_url']:
                         to_add = False
                         break
                 if to_add:
-                    print(
-                        '[!] Publisher: {}\n can be added to {} spider.'
-                            .format(in_publisher, spider_name)
-                    )
-        continue
+                    del(in_publisher['company_slug'])
+                    spider_new_urls.append(in_publisher)
+        if len(spider_new_urls) != 0:
+            # Generates a csv file for the spider if it has new urls
+            DataFrame.from_dict(spider_new_urls)\
+                .to_csv(
+                    'new_urls/{}.csv'.format(spider_name), 
+                    sep='\t', 
+                    index=False, 
+                    index_label=False,
+                    header=False
+                )
 
 
+def generate_google_query(look_for=None, query=''):
+    # you can generate queries only for some spiders by adding them as cmd params
+
+    addit = ''
+    if isinstance(look_for, list):
+        addit = " AND `name` IN ('{}')".format("', '".join(look_for))
+    if isinstance(look_for, str):
+        addit = " AND `name` IN ('{}')".format(look_for)
+
+    # Connection to db
+    db = MySQLdb.connect(DB_HOST, DB_USER, DB_PASS, DB_NAME, use_unicode=True, charset='utf8')
+    cursor = db.cursor()
+    sql = query.format(addit)
+
+    cursor.execute(sql)
+    lst = cursor.fetchall()
+    queries = dict()
+    for spider in look_for:
+        for row in lst:
+            spider_id = row[0]
+            spider_name = row[1]
+
+            if spider != spider_name:
+                continue
+
+            spider_domain = row[2]
+            ignored_subdomains = row[3].split(',')
+            google_query = row[4]
+            if not isinstance(google_query, str):
+                google_query = ''
+            google_query += GOOGLE_INCLUDE_TPL.format(spider_domain)
+            for ignored_subdomain in ignored_subdomains:
+                google_query += GOOGLE_IGNORE1_TPL.format(ignored_subdomain, spider_domain)
+            if spider not in queries.keys():
+                queries[spider] = list()
+            queries[spider].append(google_query)
+    return queries
+    
+
+def make_google_query(queries, max_urls):
+    driver = get_chromedriver(
+        # headless=True,
+        user_agent=get_user_agent(),
+        fast_load=True
+    )
+    js = ''
+
+    # Load the JavaScript to generate URLs from serach results
+    with open('Internet Marketing Ninjas SERP Extractor User.js') as script:
+        js = script.read()
+    
+    spiders_results = dict()
+
+    for spider_name, queries in queries.items():
+        urls = list()
+        for query in queries:
+            query = query.strip().replace(' ', '%20')
+            get_webpage(
+                driver=driver, 
+                url='https://www.google.com/search?q={}'.format(query),
+                wait_for_element='//div[contains(@class, "rc")]'
+            )
+            while True:
+                try:
+                    driver.execute_script(js)
+                except JavascriptException:
+                    logging.info('[!] Error executing Javascript. Retrying...')
+                    if 'sorry' in driver.current_url:
+                        logging.info('[!] Blocked...')
+                        break
+                    time.sleep(random.uniform(0.6, 1.8) * 5)
+                    continue
+                time.sleep(random.uniform(0.6, 1.8) * 2)
+                urls += [anchor.get_attribute('href') for anchor in driver.find_elements_by_xpath(
+                    '//h2[contains(text(), "Organic Results")]/following-sibling::ol//li//a'
+                )]
+
+                # Check if there's a "Next" button
+                next_button = driver.find_elements_by_xpath('//a[@id="pnnext"]')
+                if any(next_button) and len(urls) < max_urls:
+                    next_button[0].click()
+                    time.sleep(random.uniform(0.6, 1.8) * 10)
+                    continue
+                break
+        if any(urls):
+            spiders_results[spider_name] = urls
+    driver.close()
+    del(driver)
+    return(spiders_results)
+
+                
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Checks the state of input URLs')
+    parser.add_argument(
+        'spiders', 
+        metavar='S', 
+        action='store', 
+        type=str, 
+        nargs='+', 
+        help='One or more spider names'
+    )
+    parser.add_argument(
+        '--max', 
+        type=int, 
+        action='store', 
+        help='Max number of URLs to be collected per spider'
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s')
+    # Generate queries for the spiders
+    logging.info('[!] Generating Google queries for: {}'.format(', '.join(args.spiders)))
+    queries = generate_google_query(args.spiders, SQL_QUERY_FOR_QUERY_GENERATION)
+
+    # Perfom the queries and extract the URLs
+    logging.info('[!] Perfoming Google searches.')
+    spiders_urls = make_google_query(queries, max_urls=args.max)
+
+    # Check the intregrity of the extracted URLs
+    logging.info('[!] Checking URLs extracted and giving them names.')
+    check_urls_integrity(spiders_urls)
+
     # Load input data
-    spiders = load_spiders_from_db(SQL_QUERY, DB_HOST, DB_USER, DB_PASS, DB_NAME)
+    logging.info('[!] Loading input URLs and repo URLs')
+    spiders = load_spiders_from_db(SQL_QUERY_FOR_SPIDERS, DB_HOST, DB_USER, DB_PASS, DB_NAME)
     publishers = load_publishers(PUBLISHERS_PATH)
     comparing_publishers = load_publishers(PUBLISHERS_COMPARING_PATH)
 
     # Generate start_urls from input data
+    logging.info('[!] Generating start URLs.')
     start_urls = generate_start_urls(publishers, spiders)
 
     # Compare generated start_urls with urls already in the repo
