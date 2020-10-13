@@ -130,3 +130,4 @@ publishers/*
 donotadd/*
 new_urls/*
 .vscode/launch.json
+from_linkedin.csv

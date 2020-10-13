@@ -83,6 +83,7 @@ def check_urls(urls, url_template):
 
 def check_urls_integrity(spiders_urls):
     USE_SUBDOMAIN = True
+    logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s')
     
     failed = []
     passed = []
@@ -97,30 +98,29 @@ def check_urls_integrity(spiders_urls):
             
             if go and not url in passed:
                 success = False
-                retries = 3
-                i = 0
                 res = None
                 while True:
                     try:
                         logging.info('[!] Getting {}.'.format(url))
                         res = requests.get(url)
                         success = True
-                    except Exception:
-                        i += 1
+                    except Exception as e:
+                        logging.info('[!] Catched exception:{}'.format(e))
                         time.sleep(2)
-                    if i >= retries:
-                        logging.info('[!] Failed!')
-                        failed.append(url)
                         break
                     if res.status_code == 200:
                         logging.info('[!] Success!')
                         break
+                    else:
+                        logging.info('[!] Fail!')
+                        break
 
-                if res.status_code == 200:
-                    publisher = dict()
-                    publisher['company_name'] = subdomain_to_name(prs.urlparse(url).netloc.lower())
-                    publisher['start_url'] = url
-                    checked_publisher_urls.append(publisher)
+                if res is not None:
+                    if res.status_code == 200:
+                        publisher = dict()
+                        publisher['company_name'] = subdomain_to_name(prs.urlparse(url).netloc.lower())
+                        publisher['start_url'] = url
+                        checked_publisher_urls.append(publisher)
                 else:
                     failed.append(url)
                 passed.append(url)

@@ -17,43 +17,6 @@ from pandas import DataFrame
 from scraping_common import *
 
 
-load_dotenv(find_dotenv())
-DB_HOST = os.getenv('DB_HOST')
-DB_USER = os.getenv('DB_USER')
-DB_PASS = os.getenv('DB_PASS')
-DB_NAME = os.getenv('DB_NAME')
-PUBLISHERS_PATH = os.getenv('PUBLISHERS_INPUT_PATH')
-PUBLISHERS_COMPARING_PATH = os.getenv('PUBLISHERS_COMPARING_PATH')
-GOOGLE_INCLUDE_TPL = ' site:*.{}'
-GOOGLE_IGNORE1_TPL = ' -site:{}.{}'
-SQL_QUERY_FOR_SPIDERS = """
-    SELECT 
-        `id`, 
-        `name`, 
-        `main_domain`, 
-        `start_link_template`,
-        `start_link_regexp`,
-        `ignored_subdomains`, 
-        `google_query` 
-    FROM 
-        `spiders_on_recruitnet` 
-    WHERE  
-        `is_ats_site`=1 AND `is_excluded`=0;
-"""
-SQL_QUERY_FOR_QUERY_GENERATION = """
-    SELECT 
-        `id`, 
-        `name`, 
-        `main_domain`, 
-        `ignored_subdomains`, 
-        `google_query` 
-    FROM 
-        `spiders_on_recruitnet` 
-    WHERE  
-        `is_ats_site`=1 AND `is_excluded`=0{};
-"""
-CHROMEDRIVER_EXE_PATH = os.getenv('CHROMEDRIVER_EXE_PATH')
-CHROMEDRIVER_COOKIES_PATH = os.getenv('CHROMEDRIVER_COOKIES_PATH')
 
 
 def load_spiders_from_db(query, db_host='127.0.0.1', db_user='root', db_pass='pass', db_name='db'):
@@ -240,8 +203,10 @@ def insert_new_urls_to_repo(start_urls, comparing_publishers):
                     spider_new_urls.append(in_publisher)
         if len(spider_new_urls) != 0:
             # Generates a csv file for the spider if it has new urls
-            DataFrame.from_dict(spider_new_urls)\
-                .to_csv(
+            df = DataFrame.from_dict(spider_new_urls)
+            df.drop_duplicates(subset=None, keep='first', inplace=False)
+            df.sort_index(inplace=True, ascending=False)
+            df.to_csv(
                     'new_urls/{}.csv'.format(spider_name), 
                     sep='\t', 
                     index=False, 
@@ -267,25 +232,24 @@ def generate_google_query(look_for=None, query=''):
     cursor.execute(sql)
     lst = cursor.fetchall()
     queries = dict()
-    for spider in look_for:
-        for row in lst:
-            spider_id = row[0]
-            spider_name = row[1]
+    spiders_names = list()
+    for row in lst:
+        spider_id = row[0]
+        spider_name = row[1]
 
-            if spider != spider_name:
-                continue
-
-            spider_domain = row[2]
-            ignored_subdomains = row[3].split(',')
-            google_query = row[4]
-            if not isinstance(google_query, str):
-                google_query = ''
-            google_query += GOOGLE_INCLUDE_TPL.format(spider_domain)
-            for ignored_subdomain in ignored_subdomains:
-                google_query += GOOGLE_IGNORE1_TPL.format(ignored_subdomain, spider_domain)
-            if spider not in queries.keys():
-                queries[spider] = list()
-            queries[spider].append(google_query)
+        spider_domain = row[2]
+        ignored_subdomains = row[3].split(',')
+        google_query = row[4]
+        if not isinstance(google_query, str):
+            google_query = ''
+        google_query += GOOGLE_INCLUDE_TPL.format(spider_domain)
+        for ignored_subdomain in ignored_subdomains:
+            google_query += GOOGLE_IGNORE1_TPL.format(ignored_subdomain, spider_domain)
+        if spider_name not in queries.keys():
+            queries[spider_name] = list()
+        queries[spider_name].append(google_query)
+        spiders_names.append(spider_name)
+    logging.info('[!] Queries generated for: {}'.format(', '.join(spiders_names)))
     return queries
     
 
@@ -342,39 +306,89 @@ def make_google_query(queries, max_urls):
 
                 
 if __name__ == "__main__":
+    load_dotenv(find_dotenv())
+    DB_HOST = os.getenv('DB_HOST')
+    DB_USER = os.getenv('DB_USER')
+    DB_PASS = os.getenv('DB_PASS')
+    DB_NAME = os.getenv('DB_NAME')
+    PUBLISHERS_PATH = os.getenv('PUBLISHERS_INPUT_PATH')
+    PUBLISHERS_COMPARING_PATH = os.getenv('PUBLISHERS_COMPARING_PATH')
+    GOOGLE_INCLUDE_TPL = ' site:*.{}'
+    GOOGLE_IGNORE1_TPL = ' -site:{}.{}'
+    SQL_QUERY_FOR_SPIDERS = """
+        SELECT 
+            `id`, 
+            `name`, 
+            `main_domain`, 
+            `start_link_template`,
+            `start_link_regexp`,
+            `ignored_subdomains`, 
+            `google_query` 
+        FROM 
+            `spiders_on_recruitnet` 
+        WHERE  
+            `is_ats_site`=1 AND `is_excluded`=0;
+    """
+    SQL_QUERY_FOR_QUERY_GENERATION = """
+        SELECT 
+            `id`, 
+            `name`, 
+            `main_domain`, 
+            `ignored_subdomains`, 
+            `google_query` 
+        FROM 
+            `spiders_on_recruitnet` 
+        WHERE  
+            `is_ats_site`=1 AND `is_excluded`=0{};
+    """
+    CHROMEDRIVER_EXE_PATH = os.getenv('CHROMEDRIVER_EXE_PATH')
+    CHROMEDRIVER_COOKIES_PATH = os.getenv('CHROMEDRIVER_COOKIES_PATH')
+
     parser = argparse.ArgumentParser(description='Checks the state of input URLs')
     parser.add_argument(
-        'spiders', 
+        '--spiders', 
         metavar='S', 
         action='store', 
         type=str, 
         nargs='+', 
+        default=None,
         help='One or more spider names'
     )
     parser.add_argument(
         '--max', 
         type=int, 
         action='store', 
+        default=20,
         help='Max number of URLs to be collected per spider'
+    )
+    parser.add_argument(
+        '--input_folder',
+        metavar='I',
+        action='store',
+        type=str,
+        default='',
+        help='Folder path for comparing URLs. If passed as an argument then the script would not '\
+        'execute the google searches'
     )
     args = parser.parse_args()
 
     logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s')
-    # Generate queries for the spiders
-    logging.info('[!] Generating Google queries for: {}'.format(', '.join(args.spiders)))
-    queries = generate_google_query(args.spiders, SQL_QUERY_FOR_QUERY_GENERATION)
+    if args.input_folder == '':
+        # Generate queries for the spiders
+        queries = generate_google_query(args.spiders, SQL_QUERY_FOR_QUERY_GENERATION)
 
-    # Perfom the queries and extract the URLs
-    logging.info('[!] Perfoming Google searches.')
-    spiders_urls = make_google_query(queries, max_urls=args.max)
+        # Perfom the queries and extract the URLs
+        logging.info('[!] Perfoming Google searches.')
+        spiders_urls = make_google_query(queries, max_urls=args.max)
 
-    # Check the intregrity of the extracted URLs
-    logging.info('[!] Checking URLs extracted and giving them names.')
-    check_urls_integrity(spiders_urls)
+        # Check the intregrity of the extracted URLs
+        logging.info('[!] Checking URLs extracted and giving them names.')
+        check_urls_integrity(spiders_urls)
 
     # Load input data
     logging.info('[!] Loading input URLs and repo URLs')
     spiders = load_spiders_from_db(SQL_QUERY_FOR_SPIDERS, DB_HOST, DB_USER, DB_PASS, DB_NAME)
+    PUBLISHERS_PATH = PUBLISHERS_PATH if args.input_folder == '' else args.input_folder
     publishers = load_publishers(PUBLISHERS_PATH)
     comparing_publishers = load_publishers(PUBLISHERS_COMPARING_PATH)
 
