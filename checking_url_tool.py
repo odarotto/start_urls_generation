@@ -21,66 +21,6 @@ def subdomain_to_name(domain):
         return name.capitalize() + suff
 
 
-def check_urls(urls, url_template):
-    
-    excluded_values = []
-    url_regexp = None
-    url_tpl = url_template
-    
-    USE_SUBDOMAIN = True
-    
-    failed = []
-    passed = []
-    domains = urls.strip().split('\n')
-    for domain in domains:
-        go = True
-        if re.search('^https?://', domain):
-            if url_regexp:
-                match = re.search(url_regexp, domain)
-                if match:
-                    domain = '|'.join(match.groups())
-                else:
-                    failed.append(url)
-                    go = False
-    
-            else:
-                domain = prs.urlsplit(domain).netloc.lower()
-    
-        if go and (not domain in passed):
-            # print('>>>> {}'.format(domain))
-            url = url_tpl.format(*domain.split('|'))
-            success = False
-            try:
-                res = requests.get(url)
-            except:
-                res = None
-                failed.append(url)
-
-            # if res and res.text:
-            #     sel_main = Selector(text=res.text)
-            #     for xpath in xpaths:
-            #         sel = sel_main.xpath(xpath)
-            #         if sel:
-            #             val = sel.get()
-            #             if not val in excluded_values:
-            #                 print('{}\t{}'.format(val.strip(), url))
-            #                 success = True
-            #                 break
-            if not success:
-                if USE_SUBDOMAIN:
-                    print('{}\t{}'.format(subdomain_to_name(domain), url))
-                else:
-                    failed.append(url)
-    
-            passed.append(domain)
-    
-    
-    if len(failed) > 0:
-        print('====== FAILED URLS ======')
-        for url in failed:
-            print(url)
-
-
 def check_urls_integrity(spiders_urls, check_xpaths=None, name_regex=None):
     USE_SUBDOMAIN = True
     logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s')

@@ -1,13 +1,9 @@
-import selenium
 import pickle
 import threading
 import random
 import datetime
 import time
-import json
-import argparse
 import csv
-import os
 import requests
 import time
 import logging
@@ -15,14 +11,11 @@ import psycopg2
 from psycopg2 import pool
 from bs4 import BeautifulSoup
 from sys import platform
-from pandas import read_excel, DataFrame, ExcelWriter
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
-from selenium.webdriver.firefox.options import Options as FirefoxOptions
-from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
 logging.basicConfig(level=logging.INFO, 
@@ -67,6 +60,7 @@ def get_chromedriver(executable_path=None, cookies=None, proxy=None, user_agent=
                         headless=False, images=False, fast_load=False):
     """Returns a Chrome WebDriver using proxies and user-agent if specified.
     """
+    drive = None
     chrome_options = webdriver.chrome.options.Options()
     if proxy is not None:
         chrome_options.add_argument('--proxy-server=%s' % proxy)
@@ -122,36 +116,12 @@ def extract_element_data(driver, xpath, retries=3):
         try:
             data = driver.find_element_by_xpath(xpath).text.strip()
             extracted = True
-        except Exception:
+        except NoSuchElementException:
             time.sleep(1)
             if tries > retries:
                 return "N/A"
             tries += 1
     return data
-
-
-def get_geckodriver(use_proxy=False, user_agent=None, headless=False, 
-                        images=False):
-    """Returns a Firefox WebDriver using proxies and user-agent if specified.
-    """
-    options = webdriver.FirefoxOptions()
-    options.add_argument('-headless')
-    profile = webdriver.FirefoxProfile()
-    profile.set_preference('browser.download.panel.shown', False)
-    profile.set_preference("browser.helperApps.neverAsk.openFile",
-                           "text/csv,application/vnd.ms-excel") 
-    profile.set_preference("browser.helperApps.neverAsk.saveToDisk", 
-                           "text/csv,application/vnd.ms-excel")
-    profile.set_preference("browser.download.folderList", 2)
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    profile.set_preference("browser.download.dir", dir_path)
-    if platform == 'linux':
-        driver = webdriver.Firefox(firefox_profile=profile)
-    if platform == 'win32':
-        driver = webdriver.Firefox(executable_path=r'C:/Users/odar/Documents/Programming'\
-            r'/geckodriver-v0.24.0-win64/geckodriver.exe', firefox_profile=profile,
-            firefox_options=options)
-    return driver
 
 
 def dict_to_csv(dictionary, columns_data):
@@ -243,44 +213,3 @@ def start_extraction_threads(in_urls, items_data, target):
         time.sleep(3)
     
     return threads
-
-
-def results_to_excel(data, filename):
-    """Saves a list of dictionaries into EXCEL file.
-    """
-    df = DataFrame(data)
-    df.to_excel(filename)
-
-
-def obj_to_json(list_of_dicts, filename):
-    """Saves a list of dictionaries Python objects to JSON format.
-    """
-    with open(filename, 'w') as json_file:
-        json.dump(list_of_dicts, json_file, indent=4)
-
-    
-def json_to_obj(filename):
-    """Extracts data from JSON file and saves it on Python object
-    """
-    obj = None
-    try:
-        with open(filename) as json_file:
-            obj = json.loads(json_file.read())
-    except FileNotFoundError:
-        logging.info('{} not found.'.format(filename))
-        return None
-    return obj
-
-
-def obj_to_excel(list_of_dicts, filename):
-    """Saves a list of dictionaries Python objects to EXCEL format.
-    """
-    df = DataFrame.from_records(list_of_dicts)
-    writer = ExcelWriter(filename, engine='xlsxwriter')
-    df.to_excel(writer)
-
-
-def excel_to_obj(filename):
-    """Extracts data from EXCEL file and saves it on Python object
-    """
-    return read_excel(filename)

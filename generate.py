@@ -128,6 +128,13 @@ class Generate():
             default=None,
             help='Variable that will help to extract the name from the URL.'
         )
+        parser.add_argument(
+            '--deepnest',
+            type=int,
+            action='store',
+            default=0,
+            help='Page to start looking for in the Google query.'
+        )
         args = parser.parse_args(sys.argv[2:])
         # ? If we use --spider_name argument, we must provide --query argument as well
         if (args.spider_name and args.query is None) or (args.spider_name is None and args.query):
@@ -139,10 +146,7 @@ class Generate():
 
         # * Generate queries for the spiders
         queries_for_implemented_spiders = (
-            args.query is None and args.spider_name is None and args.spiders is not None
-        )
-        queries_for_not_implemented_spiders = (
-            args.query is not None and args.spider_name is not None and args.spiders is None
+            args.query is None and args.spider_name is None
         )
         if queries_for_implemented_spiders:
             queries = generate_google_query(
@@ -155,7 +159,7 @@ class Generate():
                 look_for=args.spiders,
                 query=self.SQL_QUERY_FOR_QUERY_GENERATION
             )
-        elif queries_for_not_implemented_spiders:
+        elif not queries_for_implemented_spiders:
             # ? Generate a dict {spider_name: queries}
             queries = {args.spider_name: [args.query]}
         else:
@@ -165,7 +169,7 @@ class Generate():
 
         # Perfom the queries and extract the URLs
         logging.info('[!] Perfoming Google searches.')
-        spiders_urls = make_google_query(queries, max_urls=args.max)
+        spiders_urls = make_google_query(queries, max_urls=args.max, deepnest=args.deepnest)
 
         # Check the intregrity of the extracted URLs
         logging.info('[!] Checking URLs extracted and giving them names.')

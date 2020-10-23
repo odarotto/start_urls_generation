@@ -1,3 +1,4 @@
+from logging import Logger
 from selenium.common.exceptions import JavascriptException
 from checking_url_tool import check_urls_integrity
 from os import sep
@@ -198,6 +199,7 @@ def generate_start_urls(publishers, spiders):
 
 
 def rearrange_publisher_url(url, spider_name):
+    logging.info('[!] Rearranging URL: {}'.format(url))
     # Choose the rearranger
     for f in dir(start_urls_generation):
         if spider_name in f:
@@ -214,6 +216,17 @@ def rearrange_brassring(url):
     except Exception:
         return url
     return _format.format(domain, partnerid, siteid)
+
+
+def rearrange_ripplehire(url):
+    _format = 'https://{}/ripplehire/candidate?token={}#list'
+    r = requests.get(url)
+    domain = extract_domain_from_url(r.url)
+    try:
+        token = re.search(r'token\=([a-zA-Z0-9]+)', url).group(1)
+    except AttributeError:
+        return url
+    return _format.format(domain, token)
 
 
 def rearrange_myworkday(url):
@@ -261,7 +274,7 @@ def insert_new_urls_to_repo(start_urls, comparing_publishers, from_action=''):
         if len(spider_new_urls) != 0:
             # Generates a csv file for the spider if it has new urls
             df = DataFrame.from_dict(spider_new_urls)
-            df.drop_duplicates(subset=None, keep='first', inplace=False)
+            df.drop_duplicates(subset=None, keep='first', inplace=True)
             df.sort_index(inplace=True, ascending=False)
             folder = '/'
             if from_action == 'generate_from_google':
@@ -320,11 +333,12 @@ def generate_google_query(
     return queries
     
 
-def make_google_query(queries, max_urls):
+def make_google_query(queries_dict, max_urls, deepnest=0):
     driver = get_chromedriver(
         # headless=True,
         user_agent=get_user_agent(),
-        fast_load=True
+        fast_load=True,
+        images=True
     )
     js = ''
 
@@ -334,15 +348,23 @@ def make_google_query(queries, max_urls):
     
     spiders_results = dict()
 
-    for spider_name, queries in queries.items():
+    for spider_name, queries in queries_dict.items():
         urls = list()
         for query in queries:
             query = query.strip().replace(' ', '%20')
-            get_webpage(
-                driver=driver, 
-                url='https://www.google.com/search?q={}'.format(query),
-                wait_for_element='//div[contains(@class, "rc")]'
-            )
+            try:
+                get_webpage(
+                    driver=driver, 
+                    url='https://www.google.com/search?q={}&start={}'.format(query, deepnest),
+                    wait_for_element='//div[contains(@class, "rc")]'
+                )
+            except Exception:
+                get_webpage(
+                    driver=driver, 
+                    url='https://www.google.com/search?q={}'.format(query),
+                    wait_for_element='//div[contains(@class, "rc")]'
+                )
+
             while True:
                 try:
                     driver.execute_script(js)
@@ -353,20 +375,43 @@ def make_google_query(queries, max_urls):
                         break
                     time.sleep(random.uniform(0.6, 1.8) * 5)
                     continue
-                time.sleep(random.uniform(0.6, 1.8) * 2)
+                time.sleep(random.uniform(0.6, 1.8) * 10)
                 urls += [anchor.get_attribute('href') for anchor in driver.find_elements_by_xpath(
                     '//h2[contains(text(), "Organic Results")]/following-sibling::ol//li//a'
                 )]
 
-                # Check if there's a "Next" button
-                next_button = driver.find_elements_by_xpath('//a[@id="pnnext"]')
-                if any(next_button) and len(urls) < max_urls:
-                    next_button[0].click()
-                    time.sleep(random.uniform(0.6, 1.8) * 10)
+                # ? Check if google hide links due to repetition
+                if show_repeated_results(driver, urls, max_urls):
+                    continue
+                # ? Check if there's a "Next" button
+                if go_to_next_page(driver, urls, max_urls):
                     continue
                 break
         if any(urls):
             spiders_results[spider_name] = urls
+        if len(queries_dict.keys()) > 1:
+            logging.info('[!] Waiting 2 minutes to extract the following spider.')
+            time.sleep(120)
     driver.close()
     del(driver)
     return(spiders_results)
+
+
+def go_to_next_page(driver, urls, max_urls):
+    next_button = driver.find_elements_by_xpath('//a[@id="pnnext"]')
+    if any(next_button) and len(urls) < max_urls:
+        next_button[0].click()
+        time.sleep(random.uniform(0.6, 1.8) * 10)
+        return True
+    return False
+
+
+def show_repeated_results(driver, urls, max_urls):
+    repeat_with_all_results = driver.find_elements_by_xpath(
+        '//*[@id="ofr"]/i/a'
+    )
+    if any(repeat_with_all_results) and len(urls) < max_urls:
+        repeat_with_all_results[0].click()
+        time.sleep(random.uniform(0.6, 1.8) * 10)
+        return True
+    return False

@@ -128,6 +128,7 @@ dmypy.json
 publishers/*
 .vscode/settings.json
 donotadd/*
+preprocessed/*
 new_urls/*
 .vscode/launch.json
 from_linkedin.csv
