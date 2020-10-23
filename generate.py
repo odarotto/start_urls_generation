@@ -172,23 +172,24 @@ class Generate():
         spiders_urls = make_google_query(queries, max_urls=args.max, deepnest=args.deepnest)
 
         # Check the intregrity of the extracted URLs
-        logging.info('[!] Checking URLs extracted and giving them names.')
-        check_urls_integrity(spiders_urls, name_regex=args.name_regex)
+        # logging.info('[!] Checking URLs extracted and giving them names.')
+        # check_urls_integrity(spiders_urls, name_regex=args.name_regex)
 
         # Load input data
         logging.info('[!] Loading input URLs and repo URLs')
         spiders = load_spiders_from_db(
             self.SQL_QUERY_FOR_SPIDERS, self.DB_HOST, self.DB_USER, self.DB_PASS, self.DB_NAME
         )
-        publishers = load_publishers(self.PUBLISHERS_PATH)
-        comparing_publishers = load_publishers(self.PUBLISHERS_COMPARING_PATH)
-
-        # Generate start_urls from input data
+        # publishers = load_publishers(self.PUBLISHERS_PATH)
         logging.info('[!] Generating start URLs.')
-        start_urls = generate_start_urls(publishers, spiders)
+        comparing_publishers = load_publishers(self.PUBLISHERS_COMPARING_PATH)
+        start_urls = generate_start_urls(spiders_urls, spiders)
+        for publisher in check_urls_integrity(start_urls, name_regex=args.name_regex):
+            # Generate start_urls from input data
+            # start_urls = generate_start_urls(publisher, spiders)
 
-        # Compare generated start_urls with urls already in the repo
-        insert_new_urls_to_repo(start_urls, comparing_publishers, from_action=self.main_args.action)
+            # Compare generated start_urls with urls already in the repo
+            insert_new_urls_to_repo(publisher, comparing_publishers, from_action=self.main_args.action)
 
 
     def generate_from_linkedin_db(self):
@@ -237,10 +238,10 @@ class Generate():
             spider_publishers = list()
             for url in urls:
                 if spider['main_domain'] in url['company_domain']:
-                    publisher = dict()
-                    publisher['company_name'] = url['company_name']
-                    publisher['start_url'] = url['example_job_posting']
-                    spider_publishers.append(publisher)
+                    # publisher = dict()
+                    # publisher['company_name'] = url['company_name']
+                    # publisher['start_url'] = url['example_job_posting']
+                    spider_publishers.append(url['example_job_posting'])
             if any(spider_publishers):
                 organized_linkedin_urls_per_spider[spider['name']] = spider_publishers
         # ? Generate start_urls from the organized URLs

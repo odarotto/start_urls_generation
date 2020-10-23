@@ -16,6 +16,7 @@ from MySQLdb.cursors import DictCursor
 from pandas import DataFrame
 from scraping_common import *
 from urllib.parse import urlparse
+from checking_url_tool import create_checked_dict
 import start_urls_generation
 
 
@@ -160,42 +161,48 @@ def generate_start_urls(publishers, spiders):
 
         spider_start_urls = list()
         # Iterate over the publishers list for that spider on publishers object
-        for publisher_dict in publishers_list:
+        for publisher_url in publishers_list:
             # Match the raw publisher URL with the spider['start_link_regexp'] field
             param = None
             if spider['start_link_regexp'] is not None:
                 retry = True
                 while retry:
-                    if re.match(spider['start_link_regexp'], publisher_dict['start_url']):
+                    if re.match(spider['start_link_regexp'], publisher_url):
                         param = re.match(
                             spider['start_link_regexp'], 
-                            publisher_dict['start_url']
+                            publisher_url
                         ).group(0)
                         if '/job/' in param:
                             param = param.split('/job/')[0]
-                        to_add_dict = generate_to_add_dict(publisher_dict, param)
+                        to_add_dict = generate_to_add_dict(
+                            create_checked_dict(start_url=publisher_url),
+                            param
+                        )
                         spider_start_urls.append(to_add_dict)
                         retry = False
                     # ? If the start_link_regexp is not None but we don't have a match
                     # ? process URLs further
                     else:
                         rearranged_url = rearrange_publisher_url(
-                            publisher_dict['start_url'],
+                            publisher_url,
                             spider_name
                         )
-                        retry = not publisher_dict['start_url'] == rearranged_url
-                        publisher_dict['start_url'] = rearranged_url
+                        retry = not publisher_url == rearranged_url
+                        publisher_url = rearranged_url
                 continue
-            param = extract_domain_from_url(publisher_dict['start_url'])
+            param = extract_domain_from_url(publisher_url)
             try:
                 to_add_dict = generate_to_add_dict(
-                    publisher_dict, 
+                    create_checked_dict(start_url=publisher_url),
                     spider['start_link_template'].format(param)
                 )
                 spider_start_urls.append(to_add_dict)
             except IndexError:
-                to_add_dict = generate_to_add_dict(publisher_dict, publisher_dict['start_url'])
-                spider_start_urls.append(to_add_dict)
+                to_add_dict = generate_to_add_dict(
+                    create_checked_dict(start_url=publisher_url), 
+                    publisher_url
+                )
+                spider_start_urls.append(publisher_url)
         start_urls[spider_name] = spider_start_urls
     return start_urls
 
@@ -218,6 +225,12 @@ def rearrange_brassring(url):
     except Exception:
         return url
     return _format.format(domain, partnerid, siteid)
+
+
+def rearrange_prevueaps_ca(url):
+    _format = 'https://{}/jobs/'
+    new_url = _format.format(urlparse(url).netloc)
+    return new_url
 
 
 def rearrange_ripplehire(url):

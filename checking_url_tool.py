@@ -28,26 +28,26 @@ def check_urls_integrity(spiders_urls, check_xpaths=None, name_regex=None):
     failed = []
     passed = []
     # checked_spiders_urls = dict()
-    for spider_name, urls in spiders_urls.items():
+    for spider_name, publishers in spiders_urls.items():
         logging.info('[!] Checking {} spider URLs.'.format(spider_name))
         checked_publisher_urls = list()
-        for url in urls:
+        for publisher in publishers:
             go = False
-            if re.search('^https?://', url):
+            if re.search('^https?://', publisher['start_url']):
                 go = True
             
-            if go and not url in passed:
+            if go and not publisher['start_url'] in passed:
                 success = False
                 res = None
                 try:
-                    res = requests.get(url, timeout=30)
+                    res = requests.get(publisher['start_url'], timeout=30)
                     success = True
                 except Exception as e:
-                    logging.info('[!] Catched exception on {}:\n{}'.format(url, e))
+                    logging.info('[!] Catched exception on {}:\n{}'.format(publisher['start_url'], e))
                     time.sleep(2)
 
                 if res is not None and res.status_code == 200:
-                    logging.info('[!] {} -- {}.'.format(url, res.status_code))
+                    logging.info('[!] {} -- {}.'.format(publisher['start_url'], res.status_code))
                     if check_xpaths is not None:
                         sel_main = Selector(text=res.text)
                         xpaths_found = any(
@@ -57,47 +57,48 @@ def check_urls_integrity(spiders_urls, check_xpaths=None, name_regex=None):
                         )
                         if xpaths_found:
                             checked_publisher_urls.append(
-                                create_checked_dict(res, url, name_regex=name_regex)
+                                create_checked_dict(res, publisher['start_url'], name_regex=name_regex)
                             )
                             logging.info('[!] Success!')
-                            passed.append(url)
+                            passed.append(publisher)
                         else:
                             logging.info('[!] Xpath was not found!')
                             checked_publisher_urls.append(
                                 create_checked_dict(
                                     res, 
-                                    url, 
+                                    publisher['start_url'], 
                                     result='XPATH not found', 
                                     name_regex=name_regex
                                 )
                             )
-                            failed.append(url)
+                            failed.append(publisher)
                     checked_publisher_urls.append(
-                        create_checked_dict(res, url, result='', name_regex=name_regex)
+                        create_checked_dict(res, publisher['start_url'], result='', name_regex=name_regex)
                     )
                 else:
                     if res is not None:
-                        logging.info('[!] {} -- {}.'.format(url, res.status_code))
+                        logging.info('[!] {} -- {}.'.format(publisher['start_url'], res.status_code))
                     else:
-                        logging.info('[!] {} -- Failed.'.format(url))
-                    failed.append(url)
+                        logging.info('[!] {} -- failed.'.format(publisher['start_url']))
+                    failed.append(publisher)
         if any(checked_publisher_urls):
-            df = pd.DataFrame.from_dict(checked_publisher_urls)
-            df.drop_duplicates(subset=None, keep='first', inplace=True)
-            df.to_csv(
-                'donotadd/{}.csv'.format(spider_name), 
-                sep='\t', 
-                index=False, 
-                index_label=False,
-                header=False
-            )
+            # df = pd.DataFrame.from_dict(checked_publisher_urls)
+            # df.drop_duplicates(subset=None, keep='first', inplace=True)
+            # df.to_csv(
+            #     'donotadd/{}.csv'.format(spider_name), 
+            #     sep='\t', 
+            #     index=False, 
+            #     index_label=False,
+            #     header=False
+            # )
+            yield {spider_name: checked_publisher_urls}
     
     if len(failed) > 0:
         print('====== FAILED URLS ======')
-        for url in failed:
-            print(url)
+        for publisher in failed:
+            print(publisher)
 
-def create_checked_dict(request, start_url, result=None, name_regex=None):
+def create_checked_dict(request=None, start_url=None, result=None, name_regex=None):
     publisher = dict()
     if name_regex is None:
         publisher['company_name'] = subdomain_to_name(
@@ -111,7 +112,7 @@ def create_checked_dict(request, start_url, result=None, name_regex=None):
                 prs.urlparse(start_url.replace('www.', '')).netloc.lower()
             )
     publisher['start_url'] = start_url
-    publisher['result'] = request.status_code if result is None else result
+    # publisher['result'] = request.status_code if result is None else result
     return publisher
 
 
