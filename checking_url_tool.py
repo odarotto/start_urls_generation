@@ -83,7 +83,7 @@ def check_urls_integrity(spiders_urls, check_xpaths=None, name_regex=None):
                     failed.append(url)
         if any(checked_publisher_urls):
             df = pd.DataFrame.from_dict(checked_publisher_urls)
-            df.drop_duplicates(subset=None, keep='first', inplace=False)
+            df.drop_duplicates(subset=None, keep='first', inplace=True)
             df.to_csv(
                 'donotadd/{}.csv'.format(spider_name), 
                 sep='\t', 
@@ -102,7 +102,7 @@ def create_checked_dict(request, start_url, result=None, name_regex=None):
     if name_regex is None:
         publisher['company_name'] = subdomain_to_name(
             prs.urlparse(start_url.replace('www.', '')).netloc.lower()
-        )
+        ).replace('-', '').title()
     else:
         try:
             publisher['company_name'] = re.search(re.compile(name_regex), start_url).group(1)

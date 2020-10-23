@@ -137,12 +137,12 @@ class Generate():
         )
         args = parser.parse_args(sys.argv[2:])
         # ? If we use --spider_name argument, we must provide --query argument as well
-        if (args.spider_name and args.query is None) or (args.spider_name is None and args.query):
-            logging.error(
-                '[!] If you want to extract URLs for a spider not implemented yet, you need to '\
-                'provide [<spider_name>] and [<query>] in conjunction.'
-            )
-            exit(1)
+        # if (args.spider_name and args.query is None) or (args.spider_name is None and args.query):
+        #     logging.error(
+        #         '[!] If you want to extract URLs for a spider not implemented yet, you need to '\
+        #         'provide [<spider_name>] and [<query>] in conjunction.'
+        #     )
+        #     exit(1)
 
         # * Generate queries for the spiders
         queries_for_implemented_spiders = (
@@ -277,6 +277,20 @@ class Generate():
         spider_urls = load_csv_file(file_path=args.file_path, url_only=True)
         check_xpaths = args.xpaths.split('_|_')
         check_urls_integrity({spider_name: spider_urls}, check_xpaths=check_xpaths)
+        logging.info('[!] Loading input URLs and repo URLs')
+        spiders = load_spiders_from_db(
+            self.SQL_QUERY_FOR_SPIDERS, self.DB_HOST, self.DB_USER, self.DB_PASS, self.DB_NAME
+        )
+        spider_file = args.file_path.split('/')[-1]
+        publishers = {spider_name: load_csv_file(self.PUBLISHERS_PATH+'/{}'.format(spider_file))}
+        comparing_publishers = load_publishers(self.PUBLISHERS_COMPARING_PATH)
+
+        # Generate start_urls from input data
+        logging.info('[!] Generating start URLs.')
+        start_urls = generate_start_urls(publishers, spiders)
+
+        # Compare generated start_urls with urls already in the repo
+        insert_new_urls_to_repo(start_urls, comparing_publishers, from_action=self.main_args.action)
 
 
 if __name__ == "__main__":

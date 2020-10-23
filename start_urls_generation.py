@@ -1,3 +1,4 @@
+import argparse
 from logging import Logger
 from selenium.common.exceptions import JavascriptException
 from checking_url_tool import check_urls_integrity
@@ -14,6 +15,7 @@ from dotenv import load_dotenv, find_dotenv
 from MySQLdb.cursors import DictCursor
 from pandas import DataFrame
 from scraping_common import *
+from urllib.parse import urlparse
 import start_urls_generation
 
 
@@ -235,6 +237,12 @@ def rearrange_myworkday(url):
     except Exception:
         return url
     return new_url
+
+
+def rearrange_hirehive_com(url):
+    _format = 'https://{}.hirehive.com/'
+    parsed_url = urlparse(url)
+    return _format.format(parsed_url.path.strip('/'))
     
 
 def generate_to_add_dict(publisher_dict, start_url):
@@ -282,8 +290,9 @@ def insert_new_urls_to_repo(start_urls, comparing_publishers, from_action=''):
             elif from_action == 'generate_from_linkedin_db':
                 folder += 'from_linkedin/'
             else:
-                pass
+                folder += 'from_google/'
             file_path = 'new_urls{}{}.csv'.format(folder, spider_name)
+            logging.info('[!] Saving {} to {}'.format(spider_name, folder))
             df.to_csv(
                 file_path, 
                 sep='\t', 
