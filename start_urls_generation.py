@@ -82,8 +82,6 @@ def load_publishers(publishers_path=None, file_path=None):
                 file_path = publishers_path + '/' + file_name
                 publishers[file_name.replace('.csv', '')] = load_csv_file(file_path)
         return publishers
-    # ? Case of use: load publishers for only one spider
-    # return load_csv_format(file_path)
 
 
 def load_csv_file(file_path, url_only=False):
@@ -344,9 +342,10 @@ def generate_google_query(
         google_query = row[4]
         if not isinstance(google_query, str):
             google_query = ''
-        google_query += google_include_tpl.format(spider_domain)
-        for ignored_subdomain in ignored_subdomains:
-            google_query += google_ignore1_tpl.format(ignored_subdomain, spider_domain)
+        if 'site' not in google_query:
+            google_query += google_include_tpl.format(spider_domain)
+            for ignored_subdomain in ignored_subdomains:
+                google_query += google_ignore1_tpl.format(ignored_subdomain, spider_domain)
         if spider_name not in queries.keys():
             queries[spider_name] = list()
         queries[spider_name].append(google_query)
@@ -397,7 +396,7 @@ def make_google_query(queries_dict, max_urls, deepnest=0):
                         break
                     time.sleep(random.uniform(0.6, 1.8) * 5)
                     continue
-                time.sleep(random.uniform(0.6, 1.8) * 10)
+                time.sleep(random.uniform(0.6, 1.8) * 15)
                 urls += [anchor.get_attribute('href') for anchor in driver.find_elements_by_xpath(
                     '//h2[contains(text(), "Organic Results")]/following-sibling::ol//li//a'
                 )]

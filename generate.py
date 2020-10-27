@@ -136,14 +136,6 @@ class Generate():
             help='Page to start looking for in the Google query.'
         )
         args = parser.parse_args(sys.argv[2:])
-        # ? If we use --spider_name argument, we must provide --query argument as well
-        # if (args.spider_name and args.query is None) or (args.spider_name is None and args.query):
-        #     logging.error(
-        #         '[!] If you want to extract URLs for a spider not implemented yet, you need to '\
-        #         'provide [<spider_name>] and [<query>] in conjunction.'
-        #     )
-        #     exit(1)
-
         # * Generate queries for the spiders
         queries_for_implemented_spiders = (
             args.query is None and args.spider_name is None
@@ -169,27 +161,23 @@ class Generate():
 
         # Perfom the queries and extract the URLs
         logging.info('[!] Perfoming Google searches.')
-        spiders_urls = make_google_query(queries, max_urls=args.max, deepnest=args.deepnest)
-
-        # Check the intregrity of the extracted URLs
-        # logging.info('[!] Checking URLs extracted and giving them names.')
-        # check_urls_integrity(spiders_urls, name_regex=args.name_regex)
+        google_urls = make_google_query(queries, max_urls=args.max, deepnest=args.deepnest)
 
         # Load input data
         logging.info('[!] Loading input URLs and repo URLs')
         spiders = load_spiders_from_db(
             self.SQL_QUERY_FOR_SPIDERS, self.DB_HOST, self.DB_USER, self.DB_PASS, self.DB_NAME
         )
-        # publishers = load_publishers(self.PUBLISHERS_PATH)
         logging.info('[!] Generating start URLs.')
         comparing_publishers = load_publishers(self.PUBLISHERS_COMPARING_PATH)
-        start_urls = generate_start_urls(spiders_urls, spiders)
+        start_urls = generate_start_urls(google_urls, spiders)
         for publisher in check_urls_integrity(start_urls, name_regex=args.name_regex):
-            # Generate start_urls from input data
-            # start_urls = generate_start_urls(publisher, spiders)
-
             # Compare generated start_urls with urls already in the repo
-            insert_new_urls_to_repo(publisher, comparing_publishers, from_action=self.main_args.action)
+            insert_new_urls_to_repo(
+                publisher, 
+                comparing_publishers, 
+                from_action=self.main_args.action
+            )
 
 
     def generate_from_linkedin_db(self):
@@ -238,9 +226,6 @@ class Generate():
             spider_publishers = list()
             for url in urls:
                 if spider['main_domain'] in url['company_domain']:
-                    # publisher = dict()
-                    # publisher['company_name'] = url['company_name']
-                    # publisher['start_url'] = url['example_job_posting']
                     spider_publishers.append(url['example_job_posting'])
             if any(spider_publishers):
                 organized_linkedin_urls_per_spider[spider['name']] = spider_publishers
