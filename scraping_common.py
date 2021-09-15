@@ -103,7 +103,11 @@ def get_user_agent():
     ua_source_url='https://deviceatlas.com/blog/list-of-user-agent-strings#desktop' 
     agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"\
-            " Chrome/84.0.4147.105 Safari/537.36 Edg/84.0.522.52"
+            " Chrome/84.0.4147.105 Safari/537.36 Edg/84.0.522.52",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "\
+            "Chrome/86.0.4240.183 Safari/537.36 Edg/86.0.622.63",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "\
+            "Chrome/70.0.3538.77 Safari/537.36"
     ]
     return random.choice(agents)
 
@@ -172,7 +176,7 @@ def load_cookies(driver, filename):
         driver.add_cookie(cookie)
 
 
-def get_webpage(driver, url, wait_for_element=None, wait_time= 10, retries=3, log_success=True):
+def get_webpage(driver, url, wait_for_element=None, wait_time=10, retries=3, log_success=True):
     """Safely gets the URL with WebDriver.
     """
     tries = 0
@@ -193,12 +197,12 @@ def get_webpage(driver, url, wait_for_element=None, wait_time= 10, retries=3, lo
             success = True
             return success
         except Exception as e:
-            logging.info('{} - [!] Retrying {} due to {}'\
-                .format(get_formatted_time(), url, e))
+            logging.info('{} - [!] Retrying in 3 minutes {} due to {}'\
+                .format(get_formatted_time(), url, str(e)))
             if tries >= retries:
                 return success
             tries += 1
-            time.sleep(1)
+            time.sleep(180)
 
 
 def start_extraction_threads(in_urls, items_data, target):

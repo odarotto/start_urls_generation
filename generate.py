@@ -75,7 +75,8 @@ class Generate():
             choices=[
                 'generate_from_google',
                 'generate_from_linkedin_db',
-                'check_spider_urls'
+                'check_spider_urls',
+                'live_links'
             ]
         )
         self.main_args = parser.parse_args(sys.argv[1:2])
@@ -122,6 +123,14 @@ class Generate():
             help='Query to perform the search.'
         )
         parser.add_argument(
+            '--xpaths', 
+            metavar='X', 
+            action='store', 
+            type=str, 
+            default=None,
+            help='Element\'s xpath that the tool will be looking for on each URL'
+        )
+        parser.add_argument(
             '--name_regex', 
             type=str, 
             action='store', 
@@ -134,6 +143,13 @@ class Generate():
             action='store',
             default=0,
             help='Page to start looking for in the Google query.'
+        )
+        parser.add_argument(
+            '--implemented',
+            # type=bool,
+            action='store_false',
+            default=True,
+            help='Specifies if the spider we are looking URLs for is already in the database.'
         )
         args = parser.parse_args(sys.argv[2:])
         # * Generate queries for the spiders
@@ -169,14 +185,28 @@ class Generate():
             self.SQL_QUERY_FOR_SPIDERS, self.DB_HOST, self.DB_USER, self.DB_PASS, self.DB_NAME
         )
         logging.info('[!] Generating start URLs.')
+        # Loads the publishers already on the repo
         comparing_publishers = load_publishers(self.PUBLISHERS_COMPARING_PATH)
-        start_urls = generate_start_urls(google_urls, spiders)
-        for publisher in check_urls_integrity(start_urls, name_regex=args.name_regex):
+        # From google_urls ['url1', 'url2', ...] creates a list of dict() objects in the form:
+        # 
+        start_urls = generate_start_urls(
+            google_urls, 
+            spiders, 
+            args.name_regex, 
+            args.implemented
+        )
+        check_xpaths = None
+        if args.xpaths is not None:
+            check_xpaths = args.xpaths.split('_|_')
+        for publisher in check_urls_integrity(start_urls, 
+            name_regex=args.name_regex, check_xpaths=check_xpaths):
             # Compare generated start_urls with urls already in the repo
             insert_new_urls_to_repo(
+                # start_urls,
                 publisher, 
                 comparing_publishers, 
-                from_action=self.main_args.action
+                from_action=self.main_args.action,
+                implemented=args.implemented
             )
 
 
@@ -277,6 +307,33 @@ class Generate():
 
         # Compare generated start_urls with urls already in the repo
         insert_new_urls_to_repo(start_urls, comparing_publishers, from_action=self.main_args.action)
+
+    
+    def live_links(self):
+        parser = argparse.ArgumentParser(
+            description='Finds among the publishers for a list of spiders and generates '\
+                'live links for each one',
+            usage='generate.py live_links [--spiders]'
+        )
+        parser.add_argument(
+            '--spiders', 
+            metavar='S', 
+            action='store', 
+            type=str, 
+            nargs='+', 
+            default=None,
+            help='One or more spider names.'
+        )
+        args = parser.parse_args(sys.argv[2:])
+        spiders = args.spiders
+        publishers = dict()
+        for spider in spiders:
+            publishers[spider] = load_publishers(self.PUBLISHERS_COMPARING_PATH, spider=spider)
+
+        for spider, publishers in publishers.items():
+            for publisher in publishers:
+                print(generate_live_link(spider, publisher['company_name']))
+        # generated_live_links = generate_live_links(args['spiders'], publishers)
 
 
 if __name__ == "__main__":

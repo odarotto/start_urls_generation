@@ -1,6 +1,7 @@
 import argparse
 from logging import Logger
 from selenium.common.exceptions import JavascriptException
+from selenium.webdriver.common.action_chains import ActionChains
 from checking_url_tool import check_urls_integrity
 from os import sep
 import MySQLdb
@@ -78,9 +79,14 @@ def load_publishers(publishers_path=None, file_path=None):
         publishers = dict()
         for file_name in os.listdir(publishers_path):
             if file_name.endswith('.csv'):
-                # Load the content of the CSV file
-                file_path = publishers_path + '/' + file_name
-                publishers[file_name.replace('.csv', '')] = load_csv_file(file_path)
+                if spider is not None:
+                    if spider in file_name:
+                        file_path = publishers_path + '/' + file_name
+                        return load_csv_file(file_path)
+                else:
+                    # Load the content of the CSV file
+                    file_path = publishers_path + '/' + file_name
+                    publishers[file_name.replace('.csv', '')] = load_csv_file(file_path)
         return publishers
 
 
@@ -95,15 +101,19 @@ def load_csv_file(file_path, url_only=False):
                     line_dict = fields[-1]
                     spider_publishers.append(line_dict)
                     continue
-                line_dict = {
-                    'company_slug': '',
-                    'company_name': fields[0],
-                    'start_url': fields[-1]
-                } if len(fields) == 2 else {
+                try:
+                    line_dict = {
+                        'company_slug': '',
+                        'company_name': fields[0],
+                        'start_url': fields[-1]
+                    } if len(fields) == 2 else {
                         'company_slug': fields[0],
                         'company_name': fields[1],
                         'start_url': fields[-1]
                     }
+                except IndexError:
+                    print(fields)
+                    break
                 spider_publishers.append(line_dict)
     return spider_publishers
 
@@ -132,11 +142,13 @@ def find_spider_by_name(name, spiders):
         dict: the dict object representing the data of the spider found.
     """
     for spider in spiders:
-        if name in spider['main_domain']:
+        if name in spider['name']:
+            return spider
+        if name.replace('_', '.') in spider['main_domain']:
             return spider
 
 
-def generate_start_urls(publishers, spiders):
+def generate_start_urls(publishers, spiders, name_regex=None, implemented=True):
     """generate_start_urls : Iterates over the input publishers list, then finds the proper spider
     for the current spider_name, if the spider does not exists it continues. If the spider exists
     then iterates over all the publishers for that spider_name, matching the publishers start url 
@@ -151,78 +163,254 @@ def generate_start_urls(publishers, spiders):
     """
     # Extract domain from publishers URLs
     start_urls = dict()
-    for spider_name, publishers_list in publishers.items():
-        # Find the spider in the spiders list()
-        spider = find_spider_by_name(spider_name.replace('_', '.'), spiders)
-        if spider is None:
-            continue
-
-        spider_start_urls = list()
-        # Iterate over the publishers list for that spider on publishers object
-        for publisher_url in publishers_list:
-            # Match the raw publisher URL with the spider['start_link_regexp'] field
-            param = None
-            if spider['start_link_regexp'] is not None:
-                retry = True
-                while retry:
-                    if re.match(spider['start_link_regexp'], publisher_url):
-                        param = re.match(
-                            spider['start_link_regexp'], 
-                            publisher_url
-                        ).group(0)
-                        if '/job/' in param:
-                            param = param.split('/job/')[0]
-                        to_add_dict = generate_to_add_dict(
-                            create_checked_dict(start_url=publisher_url),
-                            param
-                        )
-                        spider_start_urls.append(to_add_dict)
-                        retry = False
-                    # ? If the start_link_regexp is not None but we don't have a match
-                    # ? process URLs further
-                    else:
-                        rearranged_url = rearrange_publisher_url(
-                            publisher_url,
-                            spider_name
-                        )
-                        retry = not publisher_url == rearranged_url
-                        publisher_url = rearranged_url
+    if implemented:
+        for spider_name, publishers_list in publishers.items():
+            # Find the spider in the spiders list()
+            spider = find_spider_by_name(spider_name, spiders)
+            if spider is None:
                 continue
-            param = extract_domain_from_url(publisher_url)
-            try:
-                to_add_dict = generate_to_add_dict(
-                    create_checked_dict(start_url=publisher_url),
-                    spider['start_link_template'].format(param)
-                )
-                spider_start_urls.append(to_add_dict)
-            except IndexError:
-                to_add_dict = generate_to_add_dict(
-                    create_checked_dict(start_url=publisher_url), 
-                    publisher_url
-                )
-                spider_start_urls.append(publisher_url)
+
+            spider_start_urls = list()
+            # Iterate over the publishers list for that spider on publishers object
+            for publisher_url in publishers_list:
+                # Match the raw publisher URL with the spider['start_link_regexp'] field
+                param = None
+                if spider['start_link_regexp'] is not None:
+                    retry = True
+                    while retry:
+                        if re.match(spider['start_link_regexp'], publisher_url):
+                            param = re.match(
+                                spider['start_link_regexp'], 
+                                publisher_url
+                            ).group(0)
+                            if '/job/' in param:
+                                param = param.split('/job/')[0]
+                            to_add_dict = generate_to_add_dict(
+                                create_checked_dict(start_url=publisher_url),
+                                param
+                            )
+                            spider_start_urls.append(to_add_dict)
+                            retry = False
+                        # ? If the start_link_regexp is not None but we don't have a match
+                        # ? process URLs further
+                        else:
+                            rearranged_url = rearrange_publisher_url(
+                                publisher_url,
+                                spider_name
+                            )
+                            retry = not publisher_url == rearranged_url
+                            publisher_url = rearranged_url
+                    continue
+                param = extract_domain_from_url(publisher_url)
+                try:
+                    # ? Remove repeated domains
+                    start_url = spider['start_link_template'].format(param)
+                    if start_url.count(spider['main_domain']) == 2:
+                        start_url = re.sub(
+                            re.compile(re.escape(f'.{spider["main_domain"]}')), 
+                            '', 
+                            start_url, 
+                            count=1
+                        )
+                    to_add_dict = generate_to_add_dict(
+                        create_checked_dict(start_url=publisher_url),
+                        start_url
+                    )
+                    spider_start_urls.append(to_add_dict)
+                except IndexError:
+                    to_add_dict = generate_to_add_dict(
+                        create_checked_dict(start_url=publisher_url), 
+                        publisher_url
+                    )
+                    spider_start_urls.append(publisher_url)
+            start_urls[spider_name] = spider_start_urls
+        return start_urls
+    logging.info('[!] Generating start URLs for an URL not implemented yet.')
+    for spider_name, publishers_list in publishers.items():
+        spider_start_urls = list()
+        for publisher_url in publishers_list:
+            publisher_url = rearrange_publisher_url(publisher_url, spider_name)
+            to_add_dict = generate_to_add_dict(
+                create_checked_dict(start_url=publisher_url), 
+                publisher_url
+            )
+            spider_start_urls.append(to_add_dict)
         start_urls[spider_name] = spider_start_urls
     return start_urls
+
+
+def generate_live_link(spider, publisher):
+    _format = 'https://global.recruit.net/search.html?query=site%3Afeed{}{}&location=&s='
+    clean_spider_name = re.sub(r'[^a-zA-Z]', '', spider.lower())
+    clean_publisher_name = re.sub(r'[^a-zA-Z]', '', publisher.lower())
+    return _format.format(clean_publisher_name, clean_spider_name)
 
 
 def rearrange_publisher_url(url, spider_name):
     logging.info('[!] Rearranging URL: {}'.format(url))
     # Choose the rearranger
-    for f in dir(start_urls_generation):
+    packages = dir(start_urls_generation)
+    for f in packages:
         if spider_name in f:
-            return getattr(start_urls_generation, f)(url)
+            new_url = getattr(start_urls_generation, f)(url)
+            logging.info('[!] Rearranged to: {}'.format(new_url))
+            return new_url
     return url
+
+
+def rearrange_current_vacancies(url):
+    _format = 'https://{}/Careers/SearchVacancies'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_lever_co(url):
+    _format = 'https://jobs.lever.co{}'
+    parsed = urlparse(url)
+    return _format.format(parsed.path)
+
+
+def rearrange_talentclue(url):
+    # _format = 'https://{}/res_joblist.html'
+    # parsed = urlparse(url)
+    if '?' in url:
+        url = url.split('?')[0]
+    return url
+
+
+def rearrange_peoplefluent(url):
+    _format = 'https://{}/res_joblist.html'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_selecty_com_br(url):
+    _format = 'https://{}/search'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_avature_net(url):
+    _format = 'https://{}/careers/SearchJobs'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+def rearrange_candidatecare_jobs(url):
+    _format = 'https://{}/job_positions/browse'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_hr_technologies(url):
+    _format = 'https://{}/content/jobpage.asp'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_altamiraweb(url):
+    _format = 'https://{}'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_tool2match_nl(url):
+    _format = 'https://{}/api/jobs/published'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_teamtailor(url):
+    _format = 'https://{}/jobs'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_talentsoft_com(url):
+    _format = 'https://{}/offre-de-emploi/liste-toutes-offres.aspx?all=1'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_candidats_talentsin_com(url):
+    _format = 'https://{}/update-jobs-list?page=1'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_selectminds(url):
+    _format = 'https://{}/jobs/search'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_turborecruit_com_au(url):
+    _format = 'https://{}/job/job_search_result.cfm'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_interviewexchange(url):
+    _format = 'https://{}/jobsrchresults.jsp?Job_State0=*&New_Job_Post=0&Cat_Id0=*'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_mercury_com_au(url):
+    _format = 'https://{}/SearchResults.aspx'
+    parsed = urlparse(url)
+    return _format.format(parsed.netloc)
+
+
+def rearrange_jobdiva(url):
+    _format = 'https://www1.jobdiva.com/private/myjobs/searchjobsdone_outside.jsp?a={}'
+    try:
+        publiser = re.search(r'a=([a-zA-Z0-9]+)', url).group(1)
+        new_url = _format.format(publiser)
+    except Exception as e:
+        return url
+    return new_url
+
+
+def rearrange_greenhouse(url):
+    _format = 'https://boards.greenhouse.io/embed/job_board?for={}'
+    try:
+        publisher = re.search(r'\.io\/(\w+)', url).group(1)
+        new_url = _format.format(publisher)
+    except Exception:
+        return url
+    return new_url
+
+
+def rearrange_applitrack(url):
+    try:
+        new_url = url.split('?')[0] + '?all=1&embed=1'
+    except Exception:
+        return url
+    return new_url
+
+
+def rearrange_human_sourcing(url):
+    _format = 'https://{}/en'
+    try:
+        parsed = urlparse(url)
+        new_url = _format.format(parsed.netloc)
+    except Exception:
+        return url
+    return new_url
 
 
 def rearrange_brassring(url):
     _format = 'https://{}/TGnewUI/Search/Home/Home?partnerid={}&siteid={}#home'
     domain = extract_domain_from_url(url)
+    partnerid = None
+    siteid = None
     try:
         partnerid = re.search(r'partnerid=(\d+)', url).group(1)
         siteid = re.search(r'siteid=(\d+)', url).group(1)
     except Exception:
         return url
-    return _format.format(domain, partnerid, siteid)
+    new_url = _format.format(domain, partnerid, siteid)
+    return new_url
 
 
 def rearrange_prevueaps_ca(url):
@@ -233,7 +421,10 @@ def rearrange_prevueaps_ca(url):
 
 def rearrange_ripplehire(url):
     _format = 'https://{}/ripplehire/candidate?token={}#list'
-    r = requests.get(url)
+    try:
+        r = requests.get(url)
+    except Exception:
+        return url
     domain = extract_domain_from_url(r.url)
     try:
         token = re.search(r'token\=([a-zA-Z0-9]+)', url).group(1)
@@ -268,7 +459,7 @@ def generate_to_add_dict(publisher_dict, start_url):
     return to_add_dict
 
 
-def insert_new_urls_to_repo(start_urls, comparing_publishers, from_action=''):
+def insert_new_urls_to_repo(start_urls, comparing_publishers, from_action='', implemented=True):
     """insert_new_urls_to_repo : This function compares each new publisher's URL found in the input
     data against the comparing data.
 
@@ -276,41 +467,66 @@ def insert_new_urls_to_repo(start_urls, comparing_publishers, from_action=''):
         start_urls (dict): input data
         comparing_publishers (dict): comparing data
     """
-    for spider_name, publishers_list in comparing_publishers.items():
-        spider_new_urls = list()
-        if spider_name in start_urls.keys():
-            for in_publisher in start_urls[spider_name]:
-                to_add = True
-                for out_publisher in publishers_list:
-                    if in_publisher['start_url'] == out_publisher['start_url'] or \
-                        in_publisher['start_url'] in out_publisher['start_url']:
-                        to_add = False
-                        break
-                if to_add:
-                    if 'company_slug' in in_publisher.keys():
-                        del(in_publisher['company_slug'])
-                    spider_new_urls.append(in_publisher)
-        if len(spider_new_urls) != 0:
-            # Generates a csv file for the spider if it has new urls
-            df = DataFrame.from_dict(spider_new_urls)
-            df.drop_duplicates(subset=None, keep='first', inplace=True)
-            df.sort_index(inplace=True, ascending=False)
-            folder = '/'
-            if from_action == 'generate_from_google':
-                folder += 'from_google/'
-            elif from_action == 'generate_from_linkedin_db':
-                folder += 'from_linkedin/'
-            else:
-                folder += 'from_google/'
-            file_path = 'new_urls{}{}.csv'.format(folder, spider_name)
-            logging.info('[!] Saving {} to {}'.format(spider_name, folder))
-            df.to_csv(
-                file_path, 
-                sep='\t', 
-                index=False, 
-                index_label=False,
-                header=False
-            )
+    if implemented:
+        for spider_name, publishers_list in comparing_publishers.items():
+            spider_new_urls = list()
+            if spider_name in start_urls.keys():
+                for in_publisher in start_urls[spider_name]:
+                    to_add = True
+                    for out_publisher in publishers_list:
+                        if in_publisher['start_url'] == out_publisher['start_url'] or \
+                            in_publisher['start_url'] in out_publisher['start_url']:
+                            to_add = False
+                            break
+                    if to_add:
+                        if 'company_slug' in in_publisher.keys():
+                            del(in_publisher['company_slug'])
+                        spider_new_urls.append(in_publisher)
+            if len(spider_new_urls) != 0:
+                # Generates a csv file for the spider if it has new urls
+                df = DataFrame.from_dict(spider_new_urls)
+                df.drop_duplicates(subset='start_url', keep='first', inplace=True)
+                df.sort_values(inplace=True, by=['company_name'])
+                folder = '/'
+                if from_action == 'generate_from_google':
+                    folder += 'from_google/'
+                elif from_action == 'generate_from_linkedin_db':
+                    folder += 'from_linkedin/'
+                else:
+                    folder += 'from_google/'
+                file_path = 'new_urls{}{}.csv'.format(folder, spider_name)
+                logging.info('[!] Saving {} to {}'.format(spider_name, folder))
+                df.to_csv(
+                    file_path, 
+                    sep='\t', 
+                    index=False, 
+                    index_label=False,
+                    header=False
+                )
+        return True
+    else:
+        # save start_urls
+        spider_name = list(start_urls.keys())[0]
+        df = DataFrame.from_records(start_urls[spider_name])
+        df.drop_duplicates(subset='start_url', keep='first', inplace=True)
+        df.sort_values(inplace=True, by=['company_name'])
+        folder = '/'
+        if from_action == 'generate_from_google':
+            folder += 'from_google/'
+        elif from_action == 'generate_from_linkedin_db':
+            folder += 'from_linkedin/'
+        else:
+            folder += 'from_google/'
+        file_path = 'new_urls{}{}.csv'.format(folder, spider_name)
+        logging.info('[!] Saving {} to {}'.format(spider_name, folder))
+        df.to_csv(
+            file_path, 
+            sep='\t', 
+            index=False, 
+            index_label=False,
+            header=False
+        )
+    
                 
 
 def generate_google_query(
@@ -354,7 +570,7 @@ def generate_google_query(
     return queries
     
 
-def make_google_query(queries_dict, max_urls, deepnest=0):
+def make_google_query(queries_dict: dict, max_urls: int, deepnest: int=0) -> dict:
     driver = get_chromedriver(
         # headless=True,
         user_agent=get_user_agent(),
@@ -377,14 +593,40 @@ def make_google_query(queries_dict, max_urls, deepnest=0):
                 get_webpage(
                     driver=driver, 
                     url='https://www.google.com/search?q={}&start={}'.format(query, deepnest),
-                    wait_for_element='//div[contains(@class, "rc")]'
+                    wait_for_element='//div[@id="search"]//div[@class="g"]',
+                    log_success=False
                 )
             except Exception:
                 get_webpage(
-                    driver=driver, 
+                    driver=driver,
                     url='https://www.google.com/search?q={}'.format(query),
-                    wait_for_element='//div[contains(@class, "rc")]'
+                    wait_for_element='//div[@id="search"]//div[@class="g"]',
+                    log_success=False
                 )
+
+            # # ? Change to english
+            # english_link = driver.find_element_by_xpath('//a[contains(text(), "Change to English")]')
+            # ActionChains(driver).move_to_element(english_link).click().perform()
+            # time.sleep(1)
+
+            # # ? Select the time interval
+            # tools_button = driver.find_element_by_xpath('//div[contains(text(), "Tools")]') # ActionChains(driver).move_to_element(tools_button).click().perform()
+            # ActionChains(driver).move_to_element(tools_button).click().perform()
+            # time.sleep(1)
+            # interval_button = driver.find_element_by_xpath('//div[contains(text(), "Any time")]')
+            # ActionChains(driver).move_to_element(interval_button).click().perform()
+            # time.sleep(1)
+            # past_month_button = driver.find_element_by_xpath('//a[contains(text(), "Past 24 hours")]')
+            # ActionChains(driver).move_to_element(past_month_button).click().perform()
+            # time.sleep(1)
+
+            # for index, row in df.iterrows():
+            #     if '?' in row['url']:
+            #         row['name'] = re.search(r'co\/([^\?]+)', row['url']).group(1).capitalize()
+            #         publisher = re.search(r'co\/([^\?]+)', row['url']).group(1)
+            #         row['url'] = f'https://jobs.lever.co/{publisher}'
+            #         continue
+            #     row['name'] = re.search(r'co\/(.+)', row['url']).group(1).capitalize()
 
             while True:
                 try:
@@ -410,6 +652,7 @@ def make_google_query(queries_dict, max_urls, deepnest=0):
                 break
         if any(urls):
             spiders_results[spider_name] = urls
+            logging.info(f'[!] {len(urls)} URL{"s" if len(urls) > 1 else ""} extracted.')
         if len(queries_dict.keys()) > 1:
             logging.info('[!] Waiting 2 minutes to extract the following spider.')
             time.sleep(120)
@@ -422,7 +665,7 @@ def go_to_next_page(driver, urls, max_urls):
     next_button = driver.find_elements_by_xpath('//a[@id="pnnext"]')
     if any(next_button) and len(urls) < max_urls:
         next_button[0].click()
-        time.sleep(random.uniform(0.6, 1.8) * 10)
+        time.sleep(random.uniform(0.6, 1.8) * 5)
         return True
     return False
 

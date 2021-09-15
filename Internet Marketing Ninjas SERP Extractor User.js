@@ -4,7 +4,7 @@
 // @description    Extract Results from Search Results Pages
 // @downloadURL https://www.internetmarketingninjas.com/seo-tools/get-urls-grease/imnExtract.user.js
 // @updateURL https://www.internetmarketingninjas.com/seo-tools/get-urls-grease/imnExtract.user.js
-// @version 18
+// @version 19
 // @include        https://www.google.com/search*
 // @include        http://www.bing.com/*
 // @include        *search.yahoo.com/*
@@ -142,7 +142,7 @@ var googleCategories = [
         'listType': 'ul',
     },
     {
-        'xPath': "//div[@id='search']//div[@class='rc']//a",
+        'xPath': "//div[@id='search']//div[@class='g']/div/div/div/a",
         'name': "Organic Results",
         'listType': 'ol',
     },
@@ -227,7 +227,7 @@ if ( location.href.indexOf('google.com/search') != -1 && location.href.indexOf('
     let div = '<div width="100%">';
     for (let x = 0; x < exportData.length; x++) {
         div += '<h2>' + exportData[x].name + '</h2>';
-        div += '<' + exportData[x].listType + ' id="anaydenov">';
+        div += '<' + exportData[x].listType + '>';
         for (let i = 0; i < exportData[x].values.length; i++) {
             let style = '';
             if (exportData[x].listType == 'ol') {

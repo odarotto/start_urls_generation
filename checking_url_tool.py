@@ -1,4 +1,5 @@
 import logging
+from scraping_common import get_user_agent
 import time
 from os import name, sep
 import re, requests
@@ -38,7 +39,8 @@ def check_urls_integrity(spiders_urls, check_xpaths=None, name_regex=None):
             if go and not publisher['start_url'] in passed:
                 res = None
                 try:
-                    res = requests.get(publisher['start_url'], timeout=30)
+                    headers = {'user-agent': get_user_agent()}
+                    res = requests.get(publisher['start_url'], timeout=30, headers=headers)
                 except Exception as e:
                     logging.info(
                         '[!] Catched exception on {}:\n{}'.format(publisher['start_url'], e)
