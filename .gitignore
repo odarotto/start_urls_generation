@@ -132,3 +132,9 @@ preprocessed/*
 new_urls/*
 .vscode/launch.json
 from_linkedin.csv
+.vscode
+donotadd/
+livelinks/
+new_urls/
+publishers/
+to_mix/
