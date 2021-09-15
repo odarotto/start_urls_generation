@@ -53,7 +53,7 @@ def load_spiders_from_db(query, db_host='127.0.0.1', db_user='root', db_pass='pa
     return results
 
 
-def load_publishers(publishers_path=None, file_path=None):
+def load_publishers(publishers_path=None, file_path=None, spider=None):
     """load_publishers : Reads all of the CSV files in PUBLISHERS_PATH (not checked yet) 
     and generates a list() object with several dict() objects in the following structure:
 
