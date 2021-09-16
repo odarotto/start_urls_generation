@@ -81,7 +81,7 @@ class Generate():
         )
         self.main_args = parser.parse_args(sys.argv[1:2])
         if not hasattr(self, self.main_args.action):
-            print('[!] Unrecognized command.')
+            logging.info('[!] Unrecognized command.')
             parser.print_help()
             exit(1)
         getattr(self, self.main_args.action)()
@@ -109,7 +109,7 @@ class Generate():
             help='Max number of URLs to be collected per spider.'
         )
         parser.add_argument(
-            '--spider_name', 
+            '--single_spider_name', 
             type=str, 
             action='store', 
             default=None,
@@ -154,7 +154,7 @@ class Generate():
         args = parser.parse_args(sys.argv[2:])
         # * Generate queries for the spiders
         queries_for_implemented_spiders = (
-            args.query is None and args.spider_name is None
+            args.query is None and args.single_spider_name is None
         )
         if queries_for_implemented_spiders:
             queries = generate_google_query(
@@ -168,11 +168,11 @@ class Generate():
                 query=self.SQL_QUERY_FOR_QUERY_GENERATION
             )
         elif not queries_for_implemented_spiders:
-            # ? Generate a dict {spider_name: queries}
-            queries = {args.spider_name: [args.query]}
+            # ? Generate a dict {single_spider_name: queries}
+            queries = {args.single_spider_name: [args.query]}
         else:
             logging.error('[!] You need to provide at least one of these arguments:'\
-                ' [<spiders>] or [<spider_name>] and [<query>].')
+                ' [<spiders>] or [<single_spider_name>] and [<query>].')
             exit(1)
 
         # Perfom the queries and extract the URLs
@@ -186,7 +186,11 @@ class Generate():
         )
         logging.info('[!] Generating start URLs.')
         # Loads the publishers already on the repo
-        comparing_publishers = load_publishers(self.PUBLISHERS_COMPARING_PATH)
+        spiders_to_load = [args.single_spider_name] if args.spiders is None else args.spiders
+        comparing_publishers = load_publishers(
+            self.PUBLISHERS_COMPARING_PATH,
+            spiders=spiders_to_load
+        )
         # From google_urls ['url1', 'url2', ...] creates a list of dict() objects in the form:
         # 
         start_urls = generate_start_urls(
@@ -290,7 +294,7 @@ class Generate():
         )
         args = parser.parse_args(sys.argv[2:])
         spider_name = args.file_path.split('/')[-1].split('.')[0]
-        spider_urls = load_csv_file(file_path=args.file_path, url_only=True)
+        spider_urls = load_csv_files(file_path=args.file_path, url_only=True)
         check_xpaths = args.xpaths.split('_|_')
         check_urls_integrity({spider_name: spider_urls}, check_xpaths=check_xpaths)
         logging.info('[!] Loading input URLs and repo URLs')
@@ -298,7 +302,7 @@ class Generate():
             self.SQL_QUERY_FOR_SPIDERS, self.DB_HOST, self.DB_USER, self.DB_PASS, self.DB_NAME
         )
         spider_file = args.file_path.split('/')[-1]
-        publishers = {spider_name: load_csv_file(self.PUBLISHERS_PATH+'/{}'.format(spider_file))}
+        publishers = {spider_name: load_csv_files(self.PUBLISHERS_PATH+'/{}'.format(spider_file))}
         comparing_publishers = load_publishers(self.PUBLISHERS_COMPARING_PATH)
 
         # Generate start_urls from input data
@@ -328,7 +332,7 @@ class Generate():
         spiders = args.spiders
         publishers = dict()
         for spider in spiders:
-            publishers[spider] = load_publishers(self.PUBLISHERS_COMPARING_PATH, spider=spider)
+            publishers[spider] = load_publishers(self.PUBLISHERS_COMPARING_PATH, spiders=spider)
 
         for spider, publishers in publishers.items():
             for publisher in publishers:

@@ -1,5 +1,5 @@
-import argparse
-from logging import Logger
+import os
+import fnmatch
 from selenium.common.exceptions import JavascriptException
 from selenium.webdriver.common.action_chains import ActionChains
 from checking_url_tool import check_urls_integrity
@@ -26,6 +26,7 @@ def load_spiders_from_db(query, db_host='127.0.0.1', db_user='root', db_pass='pa
     using is Cursor() object.
 
     Args:
+        query (str): SQL Query.
         db_host (str, optional): Database Host. Defaults to '127.0.0.1'.
         db_user (str, optional): Database Username. Defaults to 'root'.
         db_pass (str, optional): Database Password. Defaults to 'pass'.
@@ -53,7 +54,7 @@ def load_spiders_from_db(query, db_host='127.0.0.1', db_user='root', db_pass='pa
     return results
 
 
-def load_publishers(publishers_path=None, file_path=None, spider=None):
+def load_publishers(publishers_path=None, file_path=None, spiders=None):
     """load_publishers : Reads all of the CSV files in PUBLISHERS_PATH (not checked yet) 
     and generates a list() object with several dict() objects in the following structure:
 
@@ -75,19 +76,33 @@ def load_publishers(publishers_path=None, file_path=None, spider=None):
         contains a list with all the publishers for that spider.
     """
     # Iterate over all of the CSV files
-    if file_path is None:
-        publishers = dict()
-        for file_name in os.listdir(publishers_path):
-            if file_name.endswith('.csv'):
-                if spider is not None:
-                    if spider in file_name:
-                        file_path = publishers_path + '/' + file_name
-                        return load_csv_file(file_path)
-                else:
-                    # Load the content of the CSV file
-                    file_path = publishers_path + '/' + file_name
-                    publishers[file_name.replace('.csv', '')] = load_csv_file(file_path)
-        return publishers
+    # if file_path is None:
+    publishers = dict()
+    for spider in spiders:
+        logging.info(f'[!] Loading URLs for spider: {spider}.')
+        publishers[spider] = list()
+        files_names = [
+            f for f in os.listdir(publishers_path) \
+                if re.match(fr'{spider}.+?\.csv', f) or re.match(fr'{spider}[.+]?\.csv', f)
+        ]
+        logging.info(f'[!] Files: {files_names}')
+        for name in files_names:
+            file_path = f'{publishers_path}/{name}'
+            to_add_list =  load_csv_file(file_path)
+            publishers[spider] += to_add_list
+            logging.info(f'[!] Loaded {len(publishers[spider])} publishers from {name}.')
+    return publishers
+    # for file_name in os.listdir(publishers_path):
+    #     if file_name.endswith('.csv'):
+    #         if spiders is not None:
+    #             if spiders in file_name:
+    #                 file_path = publishers_path + '/' + file_name
+    #                 return load_csv_file(file_path)
+    #         else:
+    #             # Load the content of the CSV file
+    #             file_path = publishers_path + '/' + file_name
+    #             publishers[file_name.replace('.csv', '')] = load_csv_file(file_path)
+    # return publishers
 
 
 def load_csv_file(file_path, url_only=False):
