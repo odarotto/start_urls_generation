@@ -55,7 +55,7 @@ def load_spiders_from_db(query, db_host='127.0.0.1', db_user='root', db_pass='pa
 
 
 def load_publishers(publishers_path=None, file_path=None, spiders=None):
-    """load_publishers : Reads all of the CSV files in PUBLISHERS_PATH (not checked yet) 
+    """load_publishers : Reads all of the spiders files in PUBLISHERS_PATH 
     and generates a list() object with several dict() objects in the following structure:
 
     {
@@ -75,8 +75,6 @@ def load_publishers(publishers_path=None, file_path=None, spiders=None):
         list: list of dicts that represents each spider, each one of these dict objects
         contains a list with all the publishers for that spider.
     """
-    # Iterate over all of the CSV files
-    # if file_path is None:
     publishers = dict()
     for spider in spiders:
         logging.info(f'[!] Loading URLs for spider: {spider}.')
@@ -92,17 +90,6 @@ def load_publishers(publishers_path=None, file_path=None, spiders=None):
             publishers[spider] += to_add_list
             logging.info(f'[!] Loaded {len(publishers[spider])} publishers from {name}.')
     return publishers
-    # for file_name in os.listdir(publishers_path):
-    #     if file_name.endswith('.csv'):
-    #         if spiders is not None:
-    #             if spiders in file_name:
-    #                 file_path = publishers_path + '/' + file_name
-    #                 return load_csv_file(file_path)
-    #         else:
-    #             # Load the content of the CSV file
-    #             file_path = publishers_path + '/' + file_name
-    #             publishers[file_name.replace('.csv', '')] = load_csv_file(file_path)
-    # return publishers
 
 
 def load_csv_file(file_path, url_only=False):
