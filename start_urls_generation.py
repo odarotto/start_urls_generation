@@ -570,9 +570,12 @@ def generate_google_query(
         spiders_names.append(spider_name)
     logging.info('[!] Queries generated for: {}'.format(', '.join(spiders_names)))
     return queries
-    
 
-def make_google_query(queries_dict: dict, max_urls: int, deepnest: int=0) -> dict:
+
+def make_google_query(queries_dict: dict,
+                      max_urls: int,
+                      deepnest: int=0,
+                      interval: str=None) -> dict:
     driver = get_chromedriver(
         # headless=True,
         user_agent=get_user_agent(),
@@ -606,21 +609,32 @@ def make_google_query(queries_dict: dict, max_urls: int, deepnest: int=0) -> dic
                     log_success=False
                 )
 
-            # # ? Change to english
-            # english_link = driver.find_element_by_xpath('//a[contains(text(), "Change to English")]')
-            # ActionChains(driver).move_to_element(english_link).click().perform()
-            # time.sleep(1)
+            # ? Change to english
+            english_link = driver.find_elements_by_xpath('//a[contains(text(), "Change to English")]')
+            if any(english_link):
+                ActionChains(driver).move_to_element(english_link[0]).click().perform()
+                time.sleep(1)
+            time_intervals = {
+                'past_hour': 'Past hour',
+                'past_24': 'Past 24 hours',
+                'past_week': 'Past week',
+                'any_time': 'Any time'
+            }
 
-            # # ? Select the time interval
-            # tools_button = driver.find_element_by_xpath('//div[contains(text(), "Tools")]') # ActionChains(driver).move_to_element(tools_button).click().perform()
-            # ActionChains(driver).move_to_element(tools_button).click().perform()
-            # time.sleep(1)
-            # interval_button = driver.find_element_by_xpath('//div[contains(text(), "Any time")]')
-            # ActionChains(driver).move_to_element(interval_button).click().perform()
-            # time.sleep(1)
-            # past_month_button = driver.find_element_by_xpath('//a[contains(text(), "Past 24 hours")]')
-            # ActionChains(driver).move_to_element(past_month_button).click().perform()
-            # time.sleep(1)
+            # ? Select the time interval
+            tools_button = driver.find_element_by_xpath('//div[contains(text(), "Tools")]')
+            ActionChains(driver).move_to_element(tools_button).click().perform()
+            time.sleep(1)
+            interval_button = driver.find_element_by_xpath(
+                f'//div[contains(text(), "Any time")]'
+            )
+            ActionChains(driver).move_to_element(interval_button).click().perform()
+            time.sleep(1)
+            past_interval_button = driver.find_element_by_xpath(
+                f'//a[contains(text(), "{time_intervals[interval]}")]'
+            )
+            ActionChains(driver).move_to_element(past_interval_button).click().perform()
+            time.sleep(1)
 
             # for index, row in df.iterrows():
             #     if '?' in row['url']:

@@ -151,6 +151,14 @@ class Generate():
             default=True,
             help='Specifies if the spider we are looking URLs for is already in the database.'
         )
+        parser.add_argument(
+            '--interval',
+            type=str,
+            choices=['past_hour', 'past_24', 'past_week', 'any_time'],
+            default='any_time',
+            action='store',
+            help='Specifies the time interval for the Google search results.'
+        )
         args = parser.parse_args(sys.argv[2:])
         # * Generate queries for the spiders
         queries_for_implemented_spiders = (
@@ -177,7 +185,12 @@ class Generate():
 
         # Perfom the queries and extract the URLs
         logging.info('[!] Perfoming Google searches.')
-        google_urls = make_google_query(queries, max_urls=args.max, deepnest=args.deepnest)
+        google_urls = make_google_query(
+            queries,
+            max_urls=args.max,
+            deepnest=args.deepnest,
+            interval=args.interval
+        )
 
         # Load input data
         logging.info('[!] Loading input URLs and repo URLs')
@@ -294,7 +307,7 @@ class Generate():
         )
         args = parser.parse_args(sys.argv[2:])
         spider_name = args.file_path.split('/')[-1].split('.')[0]
-        spider_urls = load_csv_files(file_path=args.file_path, url_only=True)
+        spider_urls = load_csv_file(file_path=args.file_path, url_only=True)
         check_xpaths = args.xpaths.split('_|_')
         check_urls_integrity({spider_name: spider_urls}, check_xpaths=check_xpaths)
         logging.info('[!] Loading input URLs and repo URLs')
@@ -302,7 +315,7 @@ class Generate():
             self.SQL_QUERY_FOR_SPIDERS, self.DB_HOST, self.DB_USER, self.DB_PASS, self.DB_NAME
         )
         spider_file = args.file_path.split('/')[-1]
-        publishers = {spider_name: load_csv_files(self.PUBLISHERS_PATH+'/{}'.format(spider_file))}
+        publishers = {spider_name: load_csv_file(self.PUBLISHERS_PATH+'/{}'.format(spider_file))}
         comparing_publishers = load_publishers(self.PUBLISHERS_COMPARING_PATH)
 
         # Generate start_urls from input data
